@@ -13,16 +13,20 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from _runtime import ensure_modules
+
+ensure_modules(["feedparser", "yaml"])
+
 try:
     import feedparser
 except ImportError:
-    print("Error: feedparser not installed. Run: pip3 install feedparser", file=sys.stderr)
+    print("错误：未安装 feedparser。请在仓库根目录运行：.venv/bin/python -m pip install -r requirements.txt", file=sys.stderr)
     sys.exit(1)
 
 try:
     import yaml
 except ImportError:
-    print("Error: PyYAML not installed. Run: pip3 install PyYAML", file=sys.stderr)
+    print("错误：未安装 PyYAML。请在仓库根目录运行：.venv/bin/python -m pip install -r requirements.txt", file=sys.stderr)
     sys.exit(1)
 
 

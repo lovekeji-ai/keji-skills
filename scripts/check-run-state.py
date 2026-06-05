@@ -16,10 +16,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from _runtime import ensure_modules
+
+ensure_modules(["yaml"])
+
 try:
     import yaml
 except ImportError:
-    print("错误：未安装 PyYAML。请运行：python3 -m pip install -r requirements.txt", file=sys.stderr)
+    print("错误：未安装 PyYAML。请在仓库根目录运行：.venv/bin/python -m pip install -r requirements.txt", file=sys.stderr)
     sys.exit(1)
 
 

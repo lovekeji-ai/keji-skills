@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _runtime import missing_modules
+
 try:
     import yaml
 except ImportError:
@@ -38,6 +40,7 @@ PUBLIC_FILES = (
     "scripts/init.py",
     "scripts/init_wizard.py",
     "scripts/check-run-state.py",
+    "scripts/build-summary-context.py",
     "scripts/normalize-external-source.py",
     "scripts/sync-hermes-skill.sh",
     "scripts/fetch-email-imap.py",
@@ -78,11 +81,12 @@ def check_required_files() -> int:
 
 def check_python_dependencies() -> int:
     problems = 0
+    missing = set(missing_modules(["yaml", "feedparser"]))
     for module, package in (("yaml", "PyYAML"), ("feedparser", "feedparser")):
-        if has_module(module):
+        if module not in missing:
             status("ok", f"Python 模块可用：{module}")
         else:
-            status("error", f"缺少 Python 包：{package}。请运行：python3 -m pip install -r requirements.txt")
+            status("error", f"缺少 Python 包：{package}。请运行：.venv/bin/python -m pip install -r requirements.txt")
             problems += 1
     return problems
 
