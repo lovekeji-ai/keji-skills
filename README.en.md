@@ -4,7 +4,7 @@
 
 > An AI / tech news digest skill. Let high-quality sources do the first pass of filtering, then let your agent dedupe across sources, score against your interests, and deliver a daily Markdown brief ready to drop into Obsidian.
 
-This isn't another feed reader — it's the skeleton for a personal intelligence system that brings information to you. No more opening five Newsletter sites, scrolling X, and flipping through an RSS reader every morning. Just say "generate today's AI digest" in your agent and the rest is taken care of.
+This isn't another feed reader — it's the skeleton for a personal intelligence system that brings information to you. No more opening AI HOT, five Newsletter sites, scrolling X, and flipping through an RSS reader every morning. Just say "generate today's AI digest" in your agent and the rest is taken care of.
 
 ## What you get
 
@@ -28,7 +28,7 @@ A rolling event log is maintained across days so continuation coverage of storie
 
 ```text
 Heavy aggregators
-BestBlogs / 量子位 / Readwise — pulling from across the web
+AI HOT / BestBlogs / 量子位 / Readwise — pulling from across the web
         ↓
 Editor-curated layer
 TLDR / The Rundown AI / Ben's Bites / The Neuron — second-pass curation
@@ -47,6 +47,8 @@ The defaults lean AI / tech, but intentionally keep room for engineering, startu
 1. Register this skill into your agent (Claude Code or Codex — commands at the bottom)
 2. In your agent, say `/ai-news-keji` or "generate today's AI digest"
 3. **The first run triggers a conversational onboarding** — the agent pops up `AskUserQuestion` cards for four steps. Click through; no YAML to edit.
+
+AI HOT is already wired in as a default source. It needs no API key, login, or extra install; the "external integrations" onboarding question is only for optional add-ons like `follow-builders`, `BestBlogs`, and `ak-rss-digest`.
 
 After setup, one sentence is all you need to produce the daily brief. You don't open a config file, you don't memorize commands.
 
@@ -93,10 +95,11 @@ The agent re-pops the relevant step's option card; everything else stays put.
 
 ## Default sources
 
-The public template ([`sources.example.yaml`](sources.example.yaml)) ships with four entry types — drop or extend as you like.
+AI HOT is enabled by default in the public config. RSS, Newsletter, External Skill, and Website sources live in [`sources.example.yaml`](sources.example.yaml) — drop or extend them as you like. AI HOT is not configured in `sources.yaml`; it is a built-in API source fetched by `scripts/fetch-aihot.py`, including pagination and date filtering.
 
 | Type | Default entries | Purpose |
 | --- | --- | --- |
+| API | AI HOT | Chinese AI trend curation; anonymous REST API, no token required |
 | RSS | 量子位, 三花 AI 快讯 | Chinese AI media as a baseline |
 | Newsletter | TLDR (AI / Dev / Founders), The Rundown AI, The Neuron, AI Breakfast, AI Valley, Ben's Bites | Editor-curated layer — "what mattered today" |
 | External Skill / CLI | follow-builders, BestBlogs, ak-rss-digest | X, podcasts, independent blogs |
