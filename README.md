@@ -28,7 +28,7 @@
 
 ```text
 重型聚合器
-BestBlogs / 量子位 / Readwise 等，从全网吸入信息
+AI HOT / BestBlogs / 量子位 / Readwise 等，从全网吸入信息
         ↓
 编辑精选层
 TLDR / The Rundown AI / Ben's Bites / The Neuron 等，由编辑团队二次筛选
@@ -100,10 +100,11 @@ Agent 会重新触发对应那一步的选项卡，其他配置保持不动。
 
 ## 默认信息源
 
-公开模板包含四类入口（在 [`sources.example.yaml`](sources.example.yaml) 里），你可以按需删减或新增。
+公开配置默认启用 AI HOT；RSS、Newsletter、外部 Skill 和 Website 来源在 [`sources.example.yaml`](sources.example.yaml) 里维护，你可以按需删减或新增。
 
 | 类型 | 默认条目 | 用途 |
 | --- | --- | --- |
+| API | AI HOT | 中文 AI 热点精选；匿名 REST API，无需 token，在 `config.example.yaml` 的 `pipeline.enabled_sources` 里启用 |
 | RSS | 量子位、三花 AI 快讯 | 中文 AI 媒体作为基础盘 |
 | Newsletter | TLDR (AI / Dev / Founders)、The Rundown AI、The Neuron、AI Breakfast、AI Valley、Ben's Bites | 编辑精选层，判断"今天什么重要" |
 | 外部 Skill / CLI | follow-builders、BestBlogs、ak-rss-digest | 接入 X、播客、独立博客集合 |
@@ -150,7 +151,7 @@ Agent 在初始化第 2 步会问你选哪种；事后改主意说一句"换成 
 
 ## Heavy external source 的安全落库方式
 
-像 `follow-builders`、`BestBlogs`、`ak-rss-digest` 这类来源，经常会返回超长 transcript、候选摘要、tweet 列表或聚合 JSON。现在推荐固定走两步：
+像 `AI HOT`、`follow-builders`、`BestBlogs`、`ak-rss-digest` 这类来源，会返回聚合 JSON、候选摘要、tweet 列表或超长 transcript。现在推荐固定走两步：
 
 1. **先缓存 raw**：保留上游原始输出，便于排错与重试
 2. **再做 deterministic normalization**：把 raw 转成统一的中间 JSON，再交给 Agent 去重、评分、写稿
@@ -158,6 +159,8 @@ Agent 在初始化第 2 步会问你选哪种；事后改主意说一句"换成 
 对应脚本：
 
 ```bash
+python3 scripts/fetch-aihot.py --date YYYY-MM-DD --output /path/to/aihot.json
+python3 scripts/normalize-external-source.py --source aihot --input /path/to/aihot.json --output /path/to/aihot-normalized.json
 python3 scripts/normalize-external-source.py --source follow-builders --input /path/to/follow-builders.json --output /path/to/follow-builders-normalized.json
 python3 scripts/normalize-external-source.py --source bestblogs --input /path/to/bestblogs.json --output /path/to/bestblogs-normalized.json --deep-read-bestblogs
 python3 scripts/normalize-external-source.py --source ak-rss-digest --input /path/to/ak-rss.json --output /path/to/ak-rss-digest-normalized.json
@@ -166,6 +169,7 @@ python3 scripts/normalize-external-source.py --source ak-rss-digest --input /pat
 这样做的好处：
 
 - 不把整段 transcript / prompt / 汇总文案直接塞进日报
+- `AI HOT` 通过匿名 REST API 抓取精选条目，脚本内置必要 User-Agent，并按目标日期过滤
 - `BestBlogs` 可以把 `discover` 与 `read deep` 区分开：有链接、待补抓、限流、纯推荐摘要分别标记
 - `check-run-state.py` 可以识别“只有 raw、还没 normalize”的半成品状态
 

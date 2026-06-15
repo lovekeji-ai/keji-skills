@@ -61,5 +61,48 @@ class LoadBestblogsDeepTests(unittest.TestCase):
         self.assertEqual(error["status"], "rate_limited")
 
 
+class NormalizeAIHotTests(unittest.TestCase):
+    def test_normalizes_aihot_items_into_common_schema(self) -> None:
+        payload = {
+            "target_date": "2026-06-15",
+            "timezone": "Asia/Shanghai",
+            "request": {"mode": "selected", "since": "2026-06-14T16:00:00Z"},
+            "response": {"count": 1},
+            "items": [
+                {
+                    "id": "cmqegnuc40214slunxe96pbiy",
+                    "title": "OpenAI 推出合作伙伴网络",
+                    "title_en": "Introducing the OpenAI Partner Network",
+                    "url": "https://openai.com/index/introducing-openai-partner-network",
+                    "source": "OpenAI：官网动态（RSS）",
+                    "publishedAt": "2026-06-14T17:00:00.000Z",
+                    "summary": "OpenAI 宣布推出 OpenAI Partner Network。",
+                    "category": "industry",
+                    "score": 59,
+                    "selected": True,
+                }
+            ],
+        }
+
+        normalized = normalize_external_source.normalize_aihot(payload)
+
+        self.assertEqual(normalized["source"], "aihot")
+        self.assertEqual(normalized["stats"]["normalized_items"], 1)
+        item = normalized["items"][0]
+        self.assertEqual(item["kind"], "aihot_item")
+        self.assertEqual(item["url"], "https://openai.com/index/introducing-openai-partner-network")
+        self.assertEqual(item["source_name"], "OpenAI：官网动态（RSS）")
+        self.assertEqual(item["confidence"], "high")
+        self.assertTrue(item["has_direct_url"])
+
+    def test_drops_aihot_items_without_direct_url(self) -> None:
+        normalized = normalize_external_source.normalize_aihot({
+            "items": [{"id": "x", "title": "No URL", "summary": "summary"}],
+        })
+
+        self.assertEqual(normalized["items"], [])
+        self.assertEqual(normalized["dropped"][0]["reason"], "missing_title_or_url")
+
+
 if __name__ == "__main__":
     unittest.main()

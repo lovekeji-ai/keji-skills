@@ -37,11 +37,14 @@ RAW_CACHE_FILE_NAMES = {
     "bestblogs.json": "bestblogs",
     "ak-rss.json": "ak-rss-digest",
     "ak-rss-raw.json": "ak-rss-digest",
+    "aihot.json": "aihot",
+    "aihot-raw.json": "aihot",
 }
 NORMALIZED_CACHE_FILE_NAMES = {
     "follow-builders-normalized.json": "follow-builders",
     "bestblogs-normalized.json": "bestblogs",
     "ak-rss-digest-normalized.json": "ak-rss-digest",
+    "aihot-normalized.json": "aihot",
     "external-skills-normalized.json": "external_skills",
 }
 MANIFEST_FILE_NAMES = {
@@ -50,7 +53,8 @@ MANIFEST_FILE_NAMES = {
 }
 
 
-HEAVY_EXTERNAL_SOURCES = ("follow-builders", "bestblogs", "ak-rss-digest")
+HEAVY_EXTERNAL_SOURCES = ("follow-builders", "bestblogs", "ak-rss-digest", "aihot")
+EXTERNAL_SKILL_HEAVY_SOURCES = ("follow-builders", "bestblogs", "ak-rss-digest")
 GROUP_SOURCES = ("rss", "email", "external_skills", "websites")
 ALL_SOURCES = GROUP_SOURCES + HEAVY_EXTERNAL_SOURCES
 MANIFEST_COMPLETE_STATUSES = {"complete", "completed", "ready"}
@@ -179,7 +183,7 @@ def build_source_states(cache_dir: Path, daily_cache: dict) -> dict[str, dict]:
         if source_name:
             states[source_name]["raw_files"].append(file_name)
             states[source_name]["has_raw"] = True
-            if source_name in HEAVY_EXTERNAL_SOURCES:
+            if source_name in EXTERNAL_SKILL_HEAVY_SOURCES:
                 states["external_skills"]["raw_files"].append(file_name)
                 states["external_skills"]["has_raw"] = True
 
@@ -188,7 +192,7 @@ def build_source_states(cache_dir: Path, daily_cache: dict) -> dict[str, dict]:
         if source_name:
             states[source_name]["normalized_files"].append(file_name)
             states[source_name]["has_normalized"] = True
-            if source_name in HEAVY_EXTERNAL_SOURCES:
+            if source_name in EXTERNAL_SKILL_HEAVY_SOURCES:
                 states["external_skills"]["normalized_files"].append(file_name)
                 states["external_skills"]["has_normalized"] = True
 
@@ -250,7 +254,7 @@ def build_source_states(cache_dir: Path, daily_cache: dict) -> dict[str, dict]:
             else:
                 state["status"] = "missing"
 
-    heavy_states = [states[name] for name in HEAVY_EXTERNAL_SOURCES if source_has_signal(states[name])]
+    heavy_states = [states[name] for name in EXTERNAL_SKILL_HEAVY_SOURCES if source_has_signal(states[name])]
     if heavy_states:
         states["external_skills"]["is_complete"] = bool(heavy_states) and all(item["is_complete"] for item in heavy_states)
         if states["external_skills"]["is_complete"]:

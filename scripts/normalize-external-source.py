@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SOURCE_CHOICES = ("bestblogs", "follow-builders", "ak-rss-digest")
+SOURCE_CHOICES = ("bestblogs", "follow-builders", "ak-rss-digest", "aihot")
 URL_ONLY_RE = re.compile(r"^(https?://\S+)(\s+https?://\S+)*$", re.IGNORECASE)
 WHITESPACE_RE = re.compile(r"\s+")
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
@@ -506,6 +506,75 @@ def normalize_ak_rss_digest(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def normalize_aihot(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_items = payload.get("items") or []
+    items: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+
+    for idx, entry in enumerate(raw_items):
+        if not isinstance(entry, dict):
+            dropped.append({"index": idx, "reason": "item_not_object"})
+            continue
+
+        title = clean_text(entry.get("title"))
+        url = entry.get("url")
+        summary = clean_text(entry.get("summary"))
+        source_name = clean_text(entry.get("source"))
+        if not title or not url:
+            dropped.append({
+                "index": idx,
+                "reason": "missing_title_or_url",
+                "id": entry.get("id"),
+                "title": title,
+                "url": url,
+            })
+            continue
+
+        selected = bool(entry.get("selected"))
+        items.append({
+            "id": make_item_id("aihot", [entry.get("id") or url, title]),
+            "source": "aihot",
+            "kind": "aihot_item",
+            "title": title,
+            "title_en": clean_text(entry.get("title_en")),
+            "url": url,
+            "summary": summary,
+            "published_at": entry.get("publishedAt"),
+            "source_name": source_name or "AI HOT",
+            "category": entry.get("category"),
+            "score": entry.get("score"),
+            "selected": selected,
+            "status": "ready",
+            "confidence": "high" if selected else "medium",
+            "has_direct_url": True,
+            "raw_ref": {
+                "id": entry.get("id"),
+                "source": "AI HOT",
+            },
+        })
+
+    return {
+        "schema_version": 1,
+        "normalized_at": now_iso(),
+        "source": "aihot",
+        "raw_summary": {
+            "target_date": payload.get("target_date"),
+            "timezone": payload.get("timezone"),
+            "request": payload.get("request") or {},
+            "response": payload.get("response") or {},
+            "stats": payload.get("stats") or {},
+        },
+        "items": items,
+        "dropped": dropped + (payload.get("dropped") or []),
+        "stats": {
+            "normalized_items": len(items),
+            "dropped_items": len(dropped) + len(payload.get("dropped") or []),
+            "items_with_direct_url": len(items),
+            "selected_items": sum(1 for item in items if item.get("selected")),
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Normalize heavy external-source outputs into a common JSON schema")
     parser.add_argument("--source", required=True, choices=SOURCE_CHOICES)
@@ -529,6 +598,8 @@ def main() -> int:
         normalized = normalize_follow_builders(payload)
     elif args.source == "ak-rss-digest":
         normalized = normalize_ak_rss_digest(payload)
+    elif args.source == "aihot":
+        normalized = normalize_aihot(payload)
     else:
         raise AssertionError(f"unsupported source: {args.source}")
 
