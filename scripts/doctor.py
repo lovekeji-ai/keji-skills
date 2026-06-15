@@ -41,6 +41,7 @@ PUBLIC_FILES = (
     "scripts/init_wizard.py",
     "scripts/check-run-state.py",
     "scripts/build-summary-context.py",
+    "scripts/fetch-aihot.py",
     "scripts/normalize-external-source.py",
     "scripts/sync-hermes-skill.sh",
     "scripts/fetch-email-imap.py",

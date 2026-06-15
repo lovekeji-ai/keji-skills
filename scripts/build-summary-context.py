@@ -111,6 +111,7 @@ def compute_priority(item: dict[str, Any]) -> float:
     kind = str(item.get("kind") or "")
     priority += {
         "article_candidate": 16,
+        "aihot_item": 18,
         "rss_article": 15,
         "blog_post": 14,
         "podcast_episode": 10,
@@ -260,6 +261,17 @@ def build_limitations(raw_payloads: dict[str, Any]) -> list[str]:
     if follow_stats.get("tweet_items"):
         limitations.append("follow-builders 含大量 X 动态，已按 AI 相关性和互动信号压缩，不保留低信噪比 tweet dump。")
 
+    aihot = raw_payloads.get("aihot") or {}
+    aihot_raw_summary = aihot.get("raw_summary") or {}
+    aihot_stats = aihot.get("stats") or {}
+    if aihot_raw_summary.get("request"):
+        request = aihot_raw_summary.get("request") or {}
+        limitations.append(
+            f"AI HOT 已按 {request.get('mode') or 'selected'} 模式和目标日期过滤，items API 最多覆盖最近 7 天。"
+        )
+    if aihot_stats.get("dropped_items"):
+        limitations.append(f"AI HOT 有 {aihot_stats['dropped_items']} 条因日期或字段不完整被过滤。")
+
     return limitations
 
 
@@ -369,6 +381,7 @@ def main() -> int:
         "follow-builders": load_json_if_exists(cache_dir / "follow-builders-normalized.json"),
         "bestblogs": load_json_if_exists(cache_dir / "bestblogs-normalized.json"),
         "ak-rss-digest": load_json_if_exists(cache_dir / "ak-rss-digest-normalized.json"),
+        "aihot": load_json_if_exists(cache_dir / "aihot-normalized.json"),
     }
 
     by_source_all = {
@@ -377,6 +390,7 @@ def main() -> int:
         "follow-builders": collect_normalized_items(raw_payloads["follow-builders"] or {}, "follow-builders") if raw_payloads.get("follow-builders") else [],
         "bestblogs": collect_normalized_items(raw_payloads["bestblogs"] or {}, "bestblogs") if raw_payloads.get("bestblogs") else [],
         "ak-rss-digest": collect_normalized_items(raw_payloads["ak-rss-digest"] or {}, "ak-rss-digest") if raw_payloads.get("ak-rss-digest") else [],
+        "aihot": collect_normalized_items(raw_payloads["aihot"] or {}, "aihot") if raw_payloads.get("aihot") else [],
     }
 
     selected_by_source = {

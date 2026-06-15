@@ -36,6 +36,7 @@ settings:
 pipeline:
   # 只启用你已经配置好的来源组。
   enabled_sources:
+    - aihot
     - rss
     - websites
     # - email
