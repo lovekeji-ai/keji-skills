@@ -27,6 +27,7 @@ ln -s "$PWD/keji-skills/skills/ai-news-keji" ~/.claude/skills/ai-news-keji
 | Skill | 一句话说明 |
 |-------|-----------|
 | [**ai-news-keji**](skills/ai-news-keji/) | AI / 科技新闻日报 —— Newsletter + RSS + AI HOT 等多源自动抓取、跨源去重、按兴趣评分，生成 Obsidian 友好的每日 Markdown 摘要 |
+| [**fogg-habit**](skills/fogg-habit/) | 福格习惯教练 —— 基于 BJ Fogg《福格行为模型 / Tiny Habits》的对话式习惯设计，用 B=MAP 帮你诊断为什么坚持不下来、从愿望设计新习惯、戒除坏习惯 |
 
 *更多 Skill 陆续加入中。*
 
