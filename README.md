@@ -43,10 +43,6 @@ keji-skills/
 └── README.md
 ```
 
-## 我的其他作品
-
-- [**ai-news-keji**（独立仓库）](https://github.com/lovekeji-ai/ai-news-keji) —— 本 Skill 的独立发行版，如果你只想要新闻日报这一个工具，可以直接 clone 那个仓库
-
 ## License
 
 [MIT](LICENSE)
