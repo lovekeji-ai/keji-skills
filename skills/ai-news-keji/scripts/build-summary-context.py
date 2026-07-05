@@ -99,11 +99,51 @@ def engagement_score(value: Any) -> int:
     return likes + replies * 2 + retweets * 2
 
 
+def parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    for fmt in (
+        None,
+        "%b %d, %Y",
+        "%B %d, %Y",
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%a, %d %b %Y %H:%M:%S %z",
+        "%a, %d %b %Y %H:%M:%S +0000 (UTC)",
+    ):
+        try:
+            if fmt is None:
+                parsed = datetime.fromisoformat(text)
+            else:
+                parsed = datetime.strptime(text, fmt)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def item_age_days(item: dict[str, Any]) -> int | None:
+    parsed = parse_datetime(item.get("published_at"))
+    if not parsed:
+        return None
+    now = datetime.now(timezone.utc)
+    return max((now - parsed).days, 0)
+
+
 def compute_priority(item: dict[str, Any]) -> float:
     priority = 0.0
     priority += min(ai_keyword_score(item.get("title"), item.get("summary"), item.get("source_name")) * 8, 48)
     if item.get("url"):
         priority += 18
+    else:
+        priority -= 30
     if item.get("has_direct_url"):
         priority += 10
     confidence = str(item.get("confidence") or "")
@@ -121,15 +161,34 @@ def compute_priority(item: dict[str, Any]) -> float:
     }.get(kind, 8)
     if isinstance(item.get("score"), (int, float)):
         priority += min(float(item["score"]) / 4.0, 25)
-    priority += min(engagement_score(item.get("engagement")) / 20.0, 14)
-    if str(item.get("status")) == "deferred_rate_limited":
-        priority -= 6
-    if str(item.get("status")) == "summary_only":
-        priority -= 4
+    engagement_cap = 6 if kind == "tweet" else 14
+    priority += min(engagement_score(item.get("engagement")) / 20.0, engagement_cap)
+    if kind == "tweet":
+        signal_score = item.get("signal_score")
+        if isinstance(signal_score, (int, float)):
+            priority += min(float(signal_score) * 4.0, 16)
+        # X engagement is only a tie-breaker; don't let it outrank substantive articles by itself.
+        priority = min(priority, 82)
+    age_days = item_age_days(item)
+    if age_days is not None:
+        if age_days > 30:
+            priority -= 35
+        elif age_days > 14:
+            priority -= 24
+        elif age_days > 7:
+            priority -= 14
+    status = str(item.get("status"))
+    if status == "deferred_rate_limited":
+        priority -= 10
+    if status == "summary_only":
+        priority -= 20
+    if status == "needs_deep_read":
+        priority -= 35
     return round(priority, 2)
 
 
 def compact_normalized_item(source: str, item: dict[str, Any]) -> dict[str, Any]:
+    deep_read: dict[str, Any] = item["deep_read"] if isinstance(item.get("deep_read"), dict) else {}
     summary = clean_text(item.get("summary"), max_chars=240)
     if not summary:
         summary = clean_text(item.get("title"), max_chars=120)
@@ -143,9 +202,10 @@ def compact_normalized_item(source: str, item: dict[str, Any]) -> dict[str, Any]
         "status": item.get("status") or "ready",
         "confidence": item.get("confidence") or "medium",
         "score": item.get("score"),
-        "published_at": item.get("published_at") or item.get("published_local"),
+        "published_at": item.get("published_at") or item.get("published_local") or deep_read.get("publish_datetime"),
         "has_direct_url": bool(item.get("has_direct_url") or item.get("url")),
         "engagement": item.get("engagement") if isinstance(item.get("engagement"), dict) else None,
+        "signal_score": item.get("signal_score"),
     }
     compact["priority"] = compute_priority(compact)
     return compact
@@ -223,11 +283,17 @@ def select_items(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]
 
 def source_stats(name: str, all_items: list[dict[str, Any]], selected: list[dict[str, Any]]) -> dict[str, Any]:
     linked = sum(1 for item in all_items if item.get("url"))
+    dated = [item for item in all_items if item.get("published_at")]
+    fresh_48h = sum(1 for item in all_items if item.get("published_at") and (item_age_days(item) or 0) <= 1)
+    recent_7d = sum(1 for item in all_items if item.get("published_at") and (item_age_days(item) or 999) <= 7)
     return {
         "source": name,
         "total_items": len(all_items),
         "selected_items": len(selected),
         "linked_items": linked,
+        "dated_items": len(dated),
+        "fresh_48h_items": fresh_48h,
+        "recent_7d_items": recent_7d,
         "top_priority": selected[0].get("priority") if selected else None,
     }
 
@@ -275,6 +341,49 @@ def build_limitations(raw_payloads: dict[str, Any]) -> list[str]:
     return limitations
 
 
+def freshness_bucket(item: dict[str, Any]) -> str:
+    age_days = item_age_days(item)
+    if age_days is None:
+        return "undated"
+    if age_days <= 1:
+        return "fresh"
+    if age_days <= 7:
+        return "recent"
+    return "stale"
+
+
+def freshness_summary(by_source_all: dict[str, list[dict[str, Any]]]) -> tuple[list[str], list[str]]:
+    lines: list[str] = []
+    warnings: list[str] = []
+    breaking_sources = ("rss", "email", "aihot")
+    deep_sources = ("bestblogs", "follow-builders", "ak-rss-digest")
+
+    source_buckets: dict[str, dict[str, int]] = {}
+    for source, items in by_source_all.items():
+        buckets = {"fresh": 0, "recent": 0, "stale": 0, "undated": 0}
+        for item in items:
+            buckets[freshness_bucket(item)] += 1
+        source_buckets[source] = buckets
+        lines.append(
+            f"- {source}: fresh_48h={buckets['fresh']}, recent_7d={buckets['recent']}, stale_gt7d={buckets['stale']}, undated={buckets['undated']}"
+        )
+
+    breaking_fresh = sum(source_buckets.get(source, {}).get("fresh", 0) for source in breaking_sources)
+    breaking_recent = sum(source_buckets.get(source, {}).get("recent", 0) for source in breaking_sources)
+    deep_fresh = sum(source_buckets.get(source, {}).get("fresh", 0) for source in deep_sources)
+    deep_recent = sum(source_buckets.get(source, {}).get("recent", 0) for source in deep_sources)
+
+    if breaking_fresh == 0 and breaking_recent == 0:
+        warnings.append("硬新闻来源（rss/email/aihot）没有最近 7 天内的新条目；如果仍要成稿，应明确写成“今天硬新闻偏少”，并转为分析/深读视角。")
+    elif breaking_fresh == 0:
+        warnings.append("硬新闻来源没有 48 小时内的新条目；若引用最近几天的 newsletter / AI HOT 条目，必须标注为最近几天的延续，不要冒充当天新主线。")
+
+    if deep_fresh + deep_recent > 0 and breaking_fresh == 0:
+        warnings.append("BestBlogs/深读来源比硬新闻来源更新；版面上应允许高价值新深读上浮，或明确说明“主线新闻偏少，本期以深读为主”。")
+
+    return lines, warnings
+
+
 def format_item(item: dict[str, Any]) -> str:
     bits = [f"- **{item.get('title') or '未命名条目'}**"]
     meta: list[str] = []
@@ -288,6 +397,11 @@ def format_item(item: dict[str, Any]) -> str:
         meta.append(f"engagement={engagement_score(item['engagement'])}")
     if item.get("status") not in (None, "", "ready"):
         meta.append(f"status={item['status']}")
+    if item.get("published_at"):
+        meta.append(f"published={item['published_at']}")
+    bucket = freshness_bucket(item)
+    if bucket != "undated":
+        meta.append(f"freshness={bucket}")
     if meta:
         bits.append("（" + " · ".join(meta) + "）")
     if item.get("summary"):
@@ -304,9 +418,11 @@ def build_markdown(
     cache_dir: Path,
     raw_payloads: dict[str, Any],
     selected_by_source: dict[str, list[dict[str, Any]]],
+    by_source_all: dict[str, list[dict[str, Any]]],
     stats_by_source: list[dict[str, Any]],
     limitations: list[str],
 ) -> str:
+    freshness_lines, freshness_warnings = freshness_summary(by_source_all)
     lines = [
         f"# ai-news-keji compact context {date}",
         "",
@@ -328,8 +444,13 @@ def build_markdown(
     ]
     for stat in stats_by_source:
         lines.append(
-            f"- {stat['source']}: total={stat['total_items']}, selected={stat['selected_items']}, linked={stat['linked_items']}"
+            f"- {stat['source']}: total={stat['total_items']}, selected={stat['selected_items']}, linked={stat['linked_items']}, dated={stat['dated_items']}, fresh_48h={stat['fresh_48h_items']}, recent_7d={stat['recent_7d_items']}"
         )
+    lines.extend(["", "## 新鲜度检查", ""])
+    lines.extend(freshness_lines or ["- 无可用条目。"])
+    if freshness_warnings:
+        lines.extend(["", "## 新鲜度结论", ""])
+        lines.extend(f"- {item}" for item in freshness_warnings)
     lines.extend(["", "## 来源限制 / 风险", ""])
     if limitations:
         lines.extend(f"- {item}" for item in limitations)
@@ -406,6 +527,7 @@ def main() -> int:
         cache_dir=cache_dir,
         raw_payloads=raw_payloads,
         selected_by_source=selected_by_source,
+        by_source_all=by_source_all,
         stats_by_source=stats_by_source,
         limitations=limitations,
     )

@@ -24,6 +24,70 @@ URL_ONLY_RE = re.compile(r"^(https?://\S+)(\s+https?://\S+)*$", re.IGNORECASE)
 WHITESPACE_RE = re.compile(r"\s+")
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
+FOLLOW_BUILDERS_SIGNAL_KEYWORDS = (
+    # AI / model / agent signal
+    "ai", "agent", "agents", "llm", "model", "models", "claude", "openai", "anthropic", "gemini",
+    "gpt", "grok", "mistral", "qwen", "deepseek", "fable", "mythos", "cursor", "codex", "copilot",
+    "replit", "v0", "vercel", "mcp", "rag", "inference", "eval", "benchmark", "open source",
+    # Builder / engineering workflow signal
+    "workflow", "workflows", "coding", "code", "review", "security", "growth agent", "skill", "skills",
+    "sandbox", "server", "function", "runtime", "api", "apis", "deploy", "deployment", "tool", "tools",
+    "product", "engineering", "developer", "devtool", "infra", "architecture", "automation", "orchestration",
+    # Governance can be substantive in AI-builder context
+    "regulation", "regulatory", "fda", "government", "policy", "ban", "safety",
+)
+
+FOLLOW_BUILDERS_NOISE_PATTERNS = (
+    "touch grass",
+    "best dinner",
+    "michelin",
+    "followers on x",
+    "reached 70k",
+    "don't ignore your dms",
+    "dms on linkedin",
+    "this is great ux",
+    "so intuitive",
+    "attention is all you need",
+    "wanted to buy a new mac",
+    "is this a loop",
+    "who needs fable when you can have mistral’s le chaton fat",
+    "who needs fable when you can have mistral's le chaton fat",
+    "want unreleased",
+    "trusted tester",
+    "sign up here",
+)
+
+
+def follow_builders_signal_score(*fields: Any) -> int:
+    text = " ".join(clean_text(str(field)).lower() for field in fields if field)
+    return sum(1 for keyword in FOLLOW_BUILDERS_SIGNAL_KEYWORDS if keyword in text)
+
+
+def follow_builders_noise_reason(text: str, *, author_bio: str = "") -> str | None:
+    """Return a deterministic drop reason for low-signal X posts.
+
+    follow-builders intentionally pulls a broad X slice. The daily digest should only keep posts
+    with reusable facts, product/workflow signal, or concrete AI-builder judgment. Engagement alone
+    is not enough; otherwise jokes, recruitment, follower milestones, and life updates pollute the
+    compact context.
+    """
+    visible = URL_RE.sub("", clean_text(text)).strip()
+    lowered = visible.lower()
+    if not visible or URL_ONLY_RE.match(text):
+        return "url_only_or_empty_text"
+    for pattern in FOLLOW_BUILDERS_NOISE_PATTERNS:
+        if pattern in lowered:
+            return "known_low_signal_pattern"
+    word_count = len(re.findall(r"[\w'’-]+", visible))
+    signal = follow_builders_signal_score(visible, author_bio)
+    if word_count <= 4 and signal < 2:
+        return "too_short_without_ai_builder_signal"
+    if word_count <= 9 and signal == 0:
+        return "short_without_ai_builder_signal"
+    if signal == 0:
+        return "missing_ai_builder_signal"
+    return None
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -347,15 +411,18 @@ def normalize_follow_builders(payload: dict[str, Any]) -> dict[str, Any]:
                 })
                 continue
             visible_text = URL_RE.sub("", text).strip()
-            if not visible_text or URL_ONLY_RE.match(text):
+            noise_reason = follow_builders_noise_reason(text, author_bio=bio)
+            if noise_reason:
                 dropped.append({
                     "kind": "x_tweet",
                     "builder": builder_name or handle,
                     "index": tweet_idx,
-                    "reason": "url_only_or_empty_text",
+                    "reason": noise_reason,
                     "url": url,
+                    "text_preview": visible_text[:160],
                 })
                 continue
+            signal_score = follow_builders_signal_score(visible_text, bio)
             items.append({
                 "id": make_item_id("follow-builders", ["tweet", tweet.get("id"), handle]),
                 "source": "follow-builders",
@@ -368,7 +435,8 @@ def normalize_follow_builders(payload: dict[str, Any]) -> dict[str, Any]:
                 "author_handle": handle,
                 "author_bio": bio,
                 "status": "ready",
-                "confidence": "medium",
+                "confidence": "high" if signal_score >= 3 else "medium",
+                "signal_score": signal_score,
                 "engagement": {
                     "likes": tweet.get("likes"),
                     "retweets": tweet.get("retweets"),

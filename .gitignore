@@ -12,8 +12,12 @@ __pycache__/
 .env
 .env.*
 CLAUDE.md
-config.yaml
-sources.yaml
 cache/
 dist/
 build/
+
+# Per-skill runtime files (user-local, must never be committed)
+skills/*/config.yaml
+skills/*/sources.yaml
+skills/*/cache/
+skills/*/.venv/

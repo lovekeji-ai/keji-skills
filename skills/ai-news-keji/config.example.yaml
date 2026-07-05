@@ -26,11 +26,10 @@ paths:
   cache_dir: ~/.cache/ai-news-keji
 
 settings:
-  # yesterday / today
   default_date: yesterday
   timezone: Asia/Shanghai
-  retention_days: 10
-  dedup_window_days: 7
+  retention_days: 21
+  dedup_window_days: 14
   continuation_penalty: 2
 
 pipeline:

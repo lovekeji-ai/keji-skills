@@ -197,7 +197,9 @@ IMAP 抓取脚本会搜索目标日期，用 `BODY.PEEK[]` 读取邮件以避免
 
 对每个 `enabled: true` 的 `external_skills.*` 条目，运行其配置的命令。命令缺失、目录缺失或非零退出都视为来源失败；如果 `pipeline.skip_unavailable_sources` 为 true，则跳过并记录原因。
 
-对外部 skills 的结果要做可落库性检查。对 `aihot`、`follow-builders`、`bestblogs`、`ak-rss-digest` 这类 heavy external source，必须先缓存 raw，再运行 deterministic normalization，最后才把 normalized items 带进写稿与摘要流程：
+当前柯基的运行配置里，`follow-builders` 已从 ai-news-keji 主日报来源中移出，改由 Hermes cron `follow-builders-standalone-daily` 每天 07:00 单独抓取、推送，并写入 `每日新闻/Follow Builders/YYYY-MM-DD.md`；08:15 的 `sync-follow-builders-to-ai-news-summary` 会把该 section 同步进当天 `YYYY-MM-DD 摘要.md`。因此主日报流程不要因为 follow-builders 已安装就主动运行它；只有当 `external_skills.follow-builders.enabled: true` 时才按下面 heavy-source 流程处理。
+
+对外部 skills 的结果要做可落库性检查。对 `aihot`、`follow-builders`（仅当配置显式启用）、`bestblogs`、`ak-rss-digest` 这类 heavy external source，必须先缓存 raw，再运行 deterministic normalization，最后才把 normalized items 带进写稿与摘要流程：
 
 ```bash
 .venv/bin/python scripts/normalize-external-source.py --source aihot --input {cache_dir}/YYYY-MM-DD/aihot.json --output {cache_dir}/YYYY-MM-DD/aihot-normalized.json
@@ -282,9 +284,36 @@ run-manifest.json
 .venv/bin/python scripts/build-summary-context.py --date YYYY-MM-DD --config config.yaml --output {cache_dir}/YYYY-MM-DD/summary-context.md
 ```
 
+然后**必须**做一次新鲜度检查：
+
+```bash
+.venv/bin/python scripts/analyze-source-freshness.py --date YYYY-MM-DD --config config.yaml
+```
+
+这一步不是可选项。它的目标是区分：
+
+- 今天确实有新的硬新闻（rss / email / aihot）
+- 硬新闻偏少，但有较新的深读 / 观点 / 播客（如 BestBlogs）
+- 各来源整体都偏旧，这时应少写并转为分析，而不是假装今天有很多新主线
+
+新鲜度判断的实现细节也要固定下来，避免误判：
+
+- `email` 的时间字段优先看原始邮件日期（常见为 RFC2822 / UTC 字符串），不要因为格式不同就把整批 newsletter 误判为 `undated`。
+- `bestblogs` 的发布时间很多时候不在顶层，而是在 normalized 条目的 `deep_read.publish_datetime`；做 freshness 统计时必须把它提升/回填到 `published_at` 参与判断。
+- `summary-context.md` 里必须同时输出两层信息：一层是来源级统计（`dated / fresh_48h / recent_7d`），另一层是候选条目上的 `published=...` 与 `freshness=...` 标记，方便写稿时区分“今天新内容”和“近几天延续内容”。
+- 如果 freshness 检查显示“硬新闻源偏旧，但深读源较新”，最终成稿必须明确承认这一点：要么上浮高价值新深读，要么直说“今天主线新闻偏少，本期以深读/分析为主”。不要把旧 newsletter 主线硬包装成今天新闻。
+
 后续 LLM 步骤只读取 `summary-context.md`、`prompts/summary-template.md` 和评分规则。不要再把整份 raw JSON、normalized JSON、完整原始稿或长 transcript 拉进上下文。需要核验时，只回到单条来源链接或单个缓存文件，不要整源重读。
 
 如果 cron / agent 环境与交互式 shell 使用了不同 Python，优先保证所有 repo 命令从仓库根目录用 `.venv/bin/python` 执行。对可能被外部调度器从错误解释器拉起的脚本，可以加一个很薄的 runtime guard：先检查必需模块，再自动 re-exec 到 repo-local `.venv/bin/python`，最后才继续导入 `feedparser`、`yaml` 等依赖。
+
+如果本轮改动了交付文件（尤其 `email-raw.json`、原始稿、摘要稿、`summary-context.md`、`run-manifest.json`）且仓库没有 canonical test/lint/build 命令，结束前必须做一次 **ad-hoc verification**：
+
+1. 在系统临时目录里用 `tempfile` 创建带 `hermes-verify-` 前缀的临时 Python 脚本；不要把验证脚本长期留在 repo 或缓存目录。
+2. 脚本至少要断言：上述关键文件存在且可读；`email-raw.json` 结构正常；原始稿和摘要稿没有 `{{...}}` 模板残留；关键章节标题存在。
+3. 脚本内再跑一次 `.venv/bin/python scripts/check-run-state.py --date YYYY-MM-DD --config config.yaml`，并断言 `is_partial_run=false`。
+4. 运行后尽量删除临时脚本，并在最终回报里明确写成 **ad-hoc verification**，不要包装成“测试套件全绿”。
+5. 如果在一次 ad-hoc verification 之后又改了这些交付文件，之前的验证证据立即作废，必须重新生成一个新的 `hermes-verify-*.py` 临时脚本再跑一遍。
 
 清理早于 `settings.retention_days` 的日期缓存目录。
 
@@ -294,13 +323,15 @@ run-manifest.json
 
 对每个抓取项：
 
-1. 提取事件核心：用一句话描述发生了什么。
-2. 与最近事件比较。
-3. 添加新事件。
-4. 只有当延续报道提供实质新信息时才保留。
-5. 删除没有新信息的重复转述。
+1. 先把不同来源但核心事实相同的条目归并成**事件单元**，不要把每个来源条目都当成新事件。
+2. 提取事件核心：主体（公司/产品/人物/机构）+ 动作（发布/融资/并购/监管/上线/合作）+ 关键事实。
+3. 与 `recent-events.json` 比较，判断是否属于旧事件延续报道。
+4. 在写摘要前，再额外回看最近 **3 天** 的摘要主线；优先检查“今日行业大事”是否已经写过同一主线。若当天文件已归档，也要把归档目录中的最近 3 天摘要视为同一检查范围。
+5. 只有当延续报道提供**实质新信息**时才保留，例如新增数字、日期、发布范围、功能细节、监管结果、当事人原话或后续动作。
+6. 仅仅是不同媒体改写、Newsletter 复述、观点扩写，而没有新增事实时，视为重复转述，直接删除。
+7. 将最终保留的新事件或 continuation 事件写入最近事件窗口，并清理超出 `settings.dedup_window_days` 的旧记录。
 
-保留延续报道时，标记为 continuation，并在评分时应用 `settings.continuation_penalty`。
+保留延续报道时，标记为 continuation，并在评分时应用 `settings.continuation_penalty`。如果同一事件已经在最近 3 天进入过“今日行业大事”，默认**不要**连续两天再次放入“今日行业大事”；只有确认存在实质新信息时才允许再次进入，并在文案里明确写出新增了什么。
 
 ### 5. 写入原始稿
 
@@ -334,6 +365,11 @@ run-manifest.json
 - 完整条目之间用 `---` 分隔。
 - 数量是参考而不是硬性配额：2-4 条行业大事、3-5 条对我有用、10-15 条值得关注、2-3 条关键信号。
 - 每个事件放在最适合的章节；避免同一事件在主要章节里重复出现。
+- 生成摘要前必须做一次“最近 3 天主线回查”：优先核对最近 3 天摘要中的“今日行业大事”，不要把同一主线仅因标题改写或来源变化再次写成当天主线。
+- 如果某事件最近 3 天已经进入过“今日行业大事”，且今天没有实质新增事实，应降级到“值得关注”或直接删除，而不是重复占据主栏目。
+- 如果 `analyze-source-freshness.py` 显示硬新闻来源没有 48 小时内的新内容，不要把最近几天的 newsletter / AI HOT 条目伪装成“今天主线”；必须在文案里明确说明它们是近几天的延续。
+- 如果硬新闻来源整体偏旧，但 BestBlogs 等深读来源更新更近，可以让高价值新深读上浮；或者直接写成“今天主线新闻偏少，本期以新深读 / 结构性分析为主”。
+- 如果硬新闻来源与深读来源都缺少最近 7 天新内容，宁可少写，也要明确说明“今天没有明显新信息”，并给出原因分析；不要为凑数重复旧主线。
 - 行业重要性不必与用户个人兴趣一致。
 - 个人有用可以包括小但可执行的文章。
 

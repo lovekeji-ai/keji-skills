@@ -1,0 +1,32 @@
+{
+  "name": "keji-skills",
+  "displayName": "Keji Skills Collection",
+  "description": "柯基的 Claude Code 个人 Skill 作品集：AI/科技新闻日报等生产力技能一键安装。",
+  "version": "0.1.0",
+  "owner": {
+    "name": "lovekeji-ai",
+    "url": "https://github.com/lovekeji-ai"
+  },
+  "repository": "https://github.com/lovekeji-ai/keji-skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "claude-code",
+    "ai-news",
+    "productivity",
+    "chinese"
+  ],
+  "categories": [
+    "Productivity",
+    "Content Creation",
+    "Research"
+  ],
+  "plugins": [
+    {
+      "name": "keji-skills",
+      "description": "柯基的个人 Claude Code Skill 作品集",
+      "version": "0.1.0",
+      "source": "./"
+    }
+  ]
+}

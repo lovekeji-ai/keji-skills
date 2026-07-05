@@ -1,0 +1,12 @@
+{
+  "name": "keji-skills",
+  "version": "0.1.0",
+  "description": "柯基的 Claude Code 个人 Skill 作品集 —— AI/科技新闻日报等生产力技能",
+  "author": {
+    "name": "lovekeji-ai",
+    "url": "https://github.com/lovekeji-ai"
+  },
+  "repository": "https://github.com/lovekeji-ai/keji-skills",
+  "keywords": ["skills", "claude-code", "ai-news", "productivity"],
+  "skills": "./skills"
+}
