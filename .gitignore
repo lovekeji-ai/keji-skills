@@ -19,5 +19,6 @@ build/
 # Per-skill runtime files (user-local, must never be committed)
 skills/*/config.yaml
 skills/*/sources.yaml
+skills/*/credentials.json
 skills/*/cache/
 skills/*/.venv/
